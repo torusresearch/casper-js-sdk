@@ -5,7 +5,7 @@ import { decodeBase64 } from 'tweetnacl-util';
 import { encodeBase16, encodeBase64 } from '../index';
 import { CLPublicKey } from './CLValue';
 import { byteHash } from './Contracts';
-import eccrypto from 'eccrypto';
+import eccrypto from 'eccrypto-js';
 import * as secp256k1 from 'ethereum-cryptography/secp256k1';
 import KeyEncoder from 'key-encoder';
 import { sha256 } from 'ethereum-cryptography/sha256';
