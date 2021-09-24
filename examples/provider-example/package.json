@@ -1,0 +1,23 @@
+{
+  "name": "provider-example",
+  "version": "1.0.0",
+  "description": "example for using provider transport",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "rimraf dist/ && tsc-watch --noClear -p ./tsconfig.json",
+    "dev": "rimraf dist/ && tsc-watch --noClear -p ./tsconfig.json --onSuccess \"node ./dist/index.js\"",
+    "prepack": "npm run build",
+    "pre-commit": "lint-staged"
+  },
+  "dependencies": {
+    "casper-js-sdk": "file:./../../casper-js-sdk-2.5.1.tgz",
+    "eth-rpc-errors": "^4.0.3"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "rimraf": "^3.0.2",
+    "tsc-watch": "^4.5.0"
+  }
+}
