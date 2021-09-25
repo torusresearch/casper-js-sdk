@@ -135,9 +135,7 @@ const sendRpcRequestToChain = async (req: JRPCRequest<unknown>) => {
     req,
     rpcTarget
   });
-  console.log('final params', req);
 
-  // console.log('req', req);
   // attempt request multiple times
   const maxAttempts = 5;
   const retryInterval = 1000;
@@ -202,7 +200,6 @@ const provider: SafeEventEmitterProvider = {
     } else {
       try {
         const jrpcResult = await sendRpcRequestToChain(req);
-        console.log('jrpcResult', jrpcResult);
         return {
           id: req.id,
           jsonrpc: req.jsonrpc,
@@ -257,10 +254,6 @@ const sendDeployWithProvider = async () => {
   );
   try {
     // sending a unsigned deploy, it will be signed by provider and then sent.
-    const signedDeploy = client.signDeploy(deploy, keyPair);
-    console.log('signed deploy', signedDeploy);
-    // const deployRes = await cj.deploy(signedDeploy);
-
     const deployRes = await cs.deploy(deploy);
     console.log('deploy res', deployRes);
   } catch (error) {
