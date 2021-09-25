@@ -1,7 +1,12 @@
 import {
+  CasperClient,
   CasperServiceByJsonRPC,
   CasperServiceByProvider,
-  DeployUtil
+  DeployUtil,
+  encodeBase16,
+  Keys,
+  decodeBase16,
+  CLPublicKey
 } from 'casper-js-sdk';
 import {
   JRPCRequest,
@@ -11,6 +16,29 @@ import {
 // import fetch from 'node-fetch';
 
 import { ethErrors } from 'eth-rpc-errors';
+import { Err } from 'ts-results';
+
+const TEST_ACCOUNT = {
+  key: '49546db2f9c7c13358887deff74ef4ec10f66b0319e1ef239e940aafe51262aa',
+  pubKeyHex: encodeBase16(
+    Keys.Secp256K1.privateToPublicKey(
+      decodeBase16(
+        '49546db2f9c7c13358887deff74ef4ec10f66b0319e1ef239e940aafe51262aa'
+      )
+    )
+  )
+};
+const TEST_PUB_KEY = Keys.Secp256K1.privateToPublicKey(
+  decodeBase16(
+    '49546db2f9c7c13358887deff74ef4ec10f66b0319e1ef239e940aafe51262aa'
+  )
+);
+
+const keyPair = new Keys.Secp256K1(
+  TEST_PUB_KEY,
+  Buffer.from(TEST_ACCOUNT.key, 'hex')
+);
+
 const caspertTestnet = 'https://testnet.casper-node.tor.us';
 const RETRIABLE_ERRORS: string[] = [
   // ignore server overload errors
@@ -107,6 +135,7 @@ const sendRpcRequestToChain = async (req: JRPCRequest<unknown>) => {
     req,
     rpcTarget
   });
+  console.log('final params', req);
 
   // console.log('req', req);
   // attempt request multiple times
@@ -140,26 +169,27 @@ const sendRpcRequestToChain = async (req: JRPCRequest<unknown>) => {
   }
 };
 
+const client = new CasperClient(caspertTestnet);
+
 const processDeploy = async (req: JRPCRequest<unknown>) => {
   try {
     // we can do any preprocessing or validation on deploy here,
     // and then finally sign deploy and send it blockchain.
-
-    const jrpcResult = await sendRpcRequestToChain(req);
-    return {
-      id: req.id,
-      jsonrpc: req.jsonrpc,
-      result: jrpcResult,
-      error: null
-    };
+    const deserializedDeploy = DeployUtil.deployFromJson(req.params as any);
+    if (deserializedDeploy.ok) {
+      const signedDeploy = client.signDeploy(deserializedDeploy.val, keyPair);
+      req.params = DeployUtil.deployToJson(signedDeploy);
+      const jrpcResult = await sendRpcRequestToChain(req);
+      return {
+        id: req.id,
+        jsonrpc: req.jsonrpc,
+        result: jrpcResult,
+        error: null
+      };
+    }
+    throw new Error('Failed to parsed deploy');
   } catch (error) {
-    console.log('error in provider', error);
-    return {
-      id: req.id,
-      jsonrpc: req.jsonrpc,
-      result: null,
-      error
-    };
+    throw error;
   }
 };
 
@@ -167,14 +197,7 @@ const provider: SafeEventEmitterProvider = {
   sendAsync: async (req: JRPCRequest<unknown>): Promise<any> => {
     // we are intercepting 'chain_get_block' and returning custom result,
     // for rest of rpc calls we are simply sending rpc call to blockchain and returning the result.
-    if (req.method === 'chain_get_block') {
-      return {
-        id: req.id,
-        jsonrpc: req.jsonrpc,
-        result: {},
-        error: null
-      };
-    } else if (req.method === 'account_put_deploy') {
+    if (req.method === 'account_put_deploy') {
       return processDeploy(req);
     } else {
       try {
@@ -187,7 +210,6 @@ const provider: SafeEventEmitterProvider = {
           error: null
         };
       } catch (error) {
-        console.log('error in provider', error);
         return {
           id: req.id,
           jsonrpc: req.jsonrpc,
@@ -204,19 +226,46 @@ const provider: SafeEventEmitterProvider = {
 };
 const cs = new CasperServiceByProvider(provider);
 
-const cj = new CasperServiceByJsonRPC(caspertTestnet);
-
 const sendDeployWithProvider = async () => {
-  // note that,  rpc method name for this is 'chain_get_era_info_by_switch_block' which we are not matching,
-  // so request will go to chain using `sendRpcRequestToChain` from sendAsync.
-  const eraInfo = await cs.getEraInfoBySwitchBlock(
-    '77e5cc0682c1335fd3d41670e7635c9314fb48bc5eef685f40deb534b2f88a5b'
+  // note that,  rpc method name for this is 'account_put_deploy' which we are intercepting in sendAsync function
+  // inside provider,
+  // so request will go to chain using after getting processes inside sendAsync.
+  const receiverClPubKey = CLPublicKey.fromHex(
+    new CLPublicKey(
+      decodeBase16(TEST_ACCOUNT.pubKeyHex),
+      Keys.SignatureAlgorithm.Secp256K1
+    ).toHex()
   );
-  console.log('res from provider request to chain', eraInfo);
 
-  // this call for 'chain_get_block' is getting intercepted in provider sendAsync function
-  const latestBlock = await cs.getLatestBlockInfo();
-  console.log('res from rpc', latestBlock);
+  // keeping sender key same as receiver for testing.
+  const senderCLPubKey = CLPublicKey.fromHex(
+    new CLPublicKey(
+      decodeBase16(TEST_ACCOUNT.pubKeyHex),
+      Keys.SignatureAlgorithm.Secp256K1
+    ).toHex()
+  );
+  // making a unsigned deploy
+  const deploy = DeployUtil.makeDeploy(
+    new DeployUtil.DeployParams(senderCLPubKey, 'casper-test', 1),
+    DeployUtil.ExecutableDeployItem.newTransfer(
+      2500000000,
+      receiverClPubKey, // receiver CLPubKey
+      null, // we will use main purse, so it can be left null
+      '1' // keep static for testing
+    ),
+    DeployUtil.standardPayment(100000)
+  );
+  try {
+    // sending a unsigned deploy, it will be signed by provider and then sent.
+    const signedDeploy = client.signDeploy(deploy, keyPair);
+    console.log('signed deploy', signedDeploy);
+    // const deployRes = await cj.deploy(signedDeploy);
+
+    const deployRes = await cs.deploy(deploy);
+    console.log('deploy res', deployRes);
+  } catch (error) {
+    console.log('invalid deploy', error);
+  }
 };
 
 (async () => {

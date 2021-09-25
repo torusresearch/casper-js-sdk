@@ -136,6 +136,25 @@ Object.defineProperty(exports, '__esModule', { value: true });
 var casper_js_sdk_1 = require('casper-js-sdk');
 // import fetch from 'node-fetch';
 var eth_rpc_errors_1 = require('eth-rpc-errors');
+var TEST_ACCOUNT = {
+  key: '49546db2f9c7c13358887deff74ef4ec10f66b0319e1ef239e940aafe51262aa',
+  pubKeyHex: casper_js_sdk_1.encodeBase16(
+    casper_js_sdk_1.Keys.Secp256K1.privateToPublicKey(
+      casper_js_sdk_1.decodeBase16(
+        '49546db2f9c7c13358887deff74ef4ec10f66b0319e1ef239e940aafe51262aa'
+      )
+    )
+  )
+};
+var TEST_PUB_KEY = casper_js_sdk_1.Keys.Secp256K1.privateToPublicKey(
+  casper_js_sdk_1.decodeBase16(
+    '49546db2f9c7c13358887deff74ef4ec10f66b0319e1ef239e940aafe51262aa'
+  )
+);
+var keyPair = new casper_js_sdk_1.Keys.Secp256K1(
+  TEST_PUB_KEY,
+  Buffer.from(TEST_ACCOUNT.key, 'hex')
+);
 var caspertTestnet = 'https://testnet.casper-node.tor.us';
 var RETRIABLE_ERRORS = [
   // ignore server overload errors
@@ -235,6 +254,7 @@ var sendRpcRequestToChain = function(req) {
           })),
             (fetchUrl = _a.fetchUrl),
             (fetchParams = _a.fetchParams);
+          console.log('final params', req);
           maxAttempts = 5;
           retryInterval = 1000;
           _loop_1 = function(attempt) {
@@ -292,13 +312,20 @@ var sendRpcRequestToChain = function(req) {
     });
   });
 };
+var client = new casper_js_sdk_1.CasperClient(caspertTestnet);
 var processDeploy = function(req) {
   return __awaiter(void 0, void 0, void 0, function() {
-    var jrpcResult, error_1;
+    var deserializedDeploy, signedDeploy, jrpcResult, error_1;
     return __generator(this, function(_a) {
       switch (_a.label) {
         case 0:
-          _a.trys.push([0, 2, , 3]);
+          _a.trys.push([0, 3, , 4]);
+          deserializedDeploy = casper_js_sdk_1.DeployUtil.deployFromJson(
+            req.params
+          );
+          if (!deserializedDeploy.ok) return [3 /*break*/, 2];
+          signedDeploy = client.signDeploy(deserializedDeploy.val, keyPair);
+          req.params = casper_js_sdk_1.DeployUtil.deployToJson(signedDeploy);
           return [4 /*yield*/, sendRpcRequestToChain(req)];
         case 1:
           jrpcResult = _a.sent();
@@ -312,18 +339,11 @@ var processDeploy = function(req) {
             }
           ];
         case 2:
-          error_1 = _a.sent();
-          console.log('error in provider', error_1);
-          return [
-            2 /*return*/,
-            {
-              id: req.id,
-              jsonrpc: req.jsonrpc,
-              result: null,
-              error: error_1
-            }
-          ];
+          throw new Error('Failed to parsed deploy');
         case 3:
+          error_1 = _a.sent();
+          throw error_1;
+        case 4:
           return [2 /*return*/];
       }
     });
@@ -336,23 +356,12 @@ var provider = {
       return __generator(this, function(_a) {
         switch (_a.label) {
           case 0:
-            if (!(req.method === 'chain_get_block')) return [3 /*break*/, 1];
-            return [
-              2 /*return*/,
-              {
-                id: req.id,
-                jsonrpc: req.jsonrpc,
-                result: {},
-                error: null
-              }
-            ];
-          case 1:
-            if (!(req.method === 'account_put_deploy')) return [3 /*break*/, 2];
+            if (!(req.method === 'account_put_deploy')) return [3 /*break*/, 1];
             return [2 /*return*/, processDeploy(req)];
-          case 2:
-            _a.trys.push([2, 4, , 5]);
+          case 1:
+            _a.trys.push([1, 3, , 4]);
             return [4 /*yield*/, sendRpcRequestToChain(req)];
-          case 3:
+          case 2:
             jrpcResult = _a.sent();
             console.log('jrpcResult', jrpcResult);
             return [
@@ -364,9 +373,8 @@ var provider = {
                 error: null
               }
             ];
-          case 4:
+          case 3:
             error_2 = _a.sent();
-            console.log('error in provider', error_2);
             return [
               2 /*return*/,
               {
@@ -376,7 +384,7 @@ var provider = {
                 error: error_2
               }
             ];
-          case 5:
+          case 4:
             return [2 /*return*/];
         }
       });
@@ -388,26 +396,58 @@ var provider = {
   }
 };
 var cs = new casper_js_sdk_1.CasperServiceByProvider(provider);
-var cj = new casper_js_sdk_1.CasperServiceByJsonRPC(caspertTestnet);
 var sendDeployWithProvider = function() {
   return __awaiter(void 0, void 0, void 0, function() {
-    var eraInfo, latestBlock;
+    var receiverClPubKey,
+      senderCLPubKey,
+      deploy,
+      signedDeploy,
+      deployRes,
+      error_3;
     return __generator(this, function(_a) {
       switch (_a.label) {
         case 0:
-          return [
-            4 /*yield*/,
-            cs.getEraInfoBySwitchBlock(
-              '77e5cc0682c1335fd3d41670e7635c9314fb48bc5eef685f40deb534b2f88a5b'
-            )
-          ];
+          receiverClPubKey = casper_js_sdk_1.CLPublicKey.fromHex(
+            new casper_js_sdk_1.CLPublicKey(
+              casper_js_sdk_1.decodeBase16(TEST_ACCOUNT.pubKeyHex),
+              casper_js_sdk_1.Keys.SignatureAlgorithm.Secp256K1
+            ).toHex()
+          );
+          senderCLPubKey = casper_js_sdk_1.CLPublicKey.fromHex(
+            new casper_js_sdk_1.CLPublicKey(
+              casper_js_sdk_1.decodeBase16(TEST_ACCOUNT.pubKeyHex),
+              casper_js_sdk_1.Keys.SignatureAlgorithm.Secp256K1
+            ).toHex()
+          );
+          deploy = casper_js_sdk_1.DeployUtil.makeDeploy(
+            new casper_js_sdk_1.DeployUtil.DeployParams(
+              senderCLPubKey,
+              'casper-test',
+              1
+            ),
+            casper_js_sdk_1.DeployUtil.ExecutableDeployItem.newTransfer(
+              2500000000,
+              receiverClPubKey, // receiver CLPubKey
+              null, // we will use main purse, so it can be left null
+              '1' // keep static for testing
+            ),
+            casper_js_sdk_1.DeployUtil.standardPayment(100000)
+          );
+          _a.label = 1;
         case 1:
-          eraInfo = _a.sent();
-          console.log('res from provider request to chain', eraInfo);
-          return [4 /*yield*/, cs.getLatestBlockInfo()];
+          _a.trys.push([1, 3, , 4]);
+          signedDeploy = client.signDeploy(deploy, keyPair);
+          console.log('signed deploy', signedDeploy);
+          return [4 /*yield*/, cs.deploy(deploy)];
         case 2:
-          latestBlock = _a.sent();
-          console.log('res from rpc', latestBlock);
+          deployRes = _a.sent();
+          console.log('deploy res', deployRes);
+          return [3 /*break*/, 4];
+        case 3:
+          error_3 = _a.sent();
+          console.log('invalid deploy', error_3);
+          return [3 /*break*/, 4];
+        case 4:
           return [2 /*return*/];
       }
     });
