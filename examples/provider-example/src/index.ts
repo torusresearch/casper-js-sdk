@@ -193,7 +193,8 @@ const processDeploy = async (req: JRPCRequest<unknown>) => {
 
 const provider: SafeEventEmitterProvider = {
   sendAsync: async (req: JRPCRequest<unknown>): Promise<any> => {
-    // we are intercepting 'chain_get_block' and returning custom result,
+    // we are intercepting 'account_put_deploy' (ie. signing the deploy and then submitting the signed deploy
+    // to blockchain)
     // for rest of rpc calls we are simply sending rpc call to blockchain and returning the result.
     if (req.method === 'account_put_deploy') {
       return processDeploy(req);
